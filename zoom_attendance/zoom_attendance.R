@@ -20,7 +20,7 @@ roster <- read_csv('zoom_attendance/roster.csv') %>%
   group_by(student_last) %>% 
   mutate(duplicates = sum(temp)) %>% 
   ungroup() %>% 
-  mutate(check = case_when(
+  mutate(check = case_when( # code as check=YES if last name is duplicated or less than 4 letters
     length < 4 | duplicates > 1 ~ 'YES',
     TRUE ~ 'NO'
   )) %>% 
@@ -28,30 +28,33 @@ roster <- read_csv('zoom_attendance/roster.csv') %>%
 
 # Create empty data frame for taking roll
 roll <- tibble('name'=numeric(),
-               'date'=Date(),
+               'date'=character(),
                'roll'=character())
 
 for (list_i in list.files('zoom_attendance/participant_lists')) {
 
   # Load meeting info from header
-  meeting <- read_csv(paste0('zoom_attendance/participant_lists/', list_i), n_max=1) %>% 
+  meeting <- read_csv(paste0('zoom_attendance/participant_lists/', list_i),
+                      n_max=1) %>% 
     clean_names() %>% 
-    mutate(date = date(dmy_hms(start_time)))
-  date <- as.character(meeting[[1,9]])
+    mutate(date = date(mdy_hms(start_time))) %>% 
+    select(date)
+  date <- as.character(meeting[[1,1]])
 
   # Load participant info
-  participants <- read_csv(paste0('zoom_attendance/participant_lists/', list_i), skip=2) %>% 
+  participants <- read_csv(paste0('zoom_attendance/participant_lists/', list_i),
+                           skip=2) %>% 
     clean_names()
   
   # Check attendance
   for (student_i in roster$perm_number) {
     
     # Strings for student's last name and email
-    first <- filter(roster, perm_number==student_i)[[3]]
+    first <- str_split_fixed(filter(roster, perm_number==student_i)[[3]],' ', n=2)[1]
     last <- filter(roster, perm_number==student_i)[[2]]
     email <- filter(roster, perm_number==student_i)[[4]]
     
-    # Filter for Zoom participants that match last name and email
+    # Filter for Zoom participants that match either first and last name or email in roster
     temp <- participants
     temp$roll <- if_else(grepl(email, participants$user_email, ignore.case=TRUE) |
                            (grepl(last, participants$name_original_name, ignore.case=TRUE) &
@@ -73,8 +76,9 @@ for (list_i in list.files('zoom_attendance/participant_lists')) {
 
 # Reformat data frame
 attendance <- roll %>% 
+  arrange(date) %>% 
   pivot_wider(names_from = date, values_from = roll) %>% 
   full_join(roster) %>% 
   mutate_all(~replace_na(., 'ABSENT'))
 
-write_csv(attendance, 'attendance.csv')
+write_csv(attendance, 'zoom_attendance/attendance.csv')
